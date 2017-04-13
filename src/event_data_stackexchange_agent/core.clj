@@ -38,8 +38,8 @@
         question-id (:question_id item)
         answer-id (:answer_id item)
         url (condp = typ
-              "question" (str site-url "q/" question-id)
-              "answer" (str site-url "a/" answer-id)
+              "question" (str site-url "/q/" question-id)
+              "answer" (str site-url "/a/" answer-id)
               nil)
 
         work-type (condp = typ
