@@ -1,0 +1,14 @@
+version: '2'
+services:
+  test:
+    build: .
+    volumes:
+     - .:/usr/src/app
+     - ./.m2-cache:/root/.m2
+    environment:
+     - JWT_SECRETS=TEST,TEST2
+     - ARTIFACT_BASE=https://artifact.eventdata.crossref.org
+     - STATUS_SERVICE=http://status.eventdata.crossref.org
+
+    command: "lein test :unit"
+
