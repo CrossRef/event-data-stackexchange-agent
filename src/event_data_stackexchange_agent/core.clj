@@ -181,9 +181,7 @@
                        :extra {:cutoff-date (str cutoff-date) :queried-domain "doi.org"}
                        :pages [page]}]
           (log/info "Sending package...")
-          ; (>!! bundle-chan package)
-          (clojure.pprint/pprint package)
-          )))))
+          (>!! bundle-chan package))))))
   (log/info "Finished scan."))
 
 (def agent-definition
