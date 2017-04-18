@@ -1,4 +1,4 @@
-(defproject event-data-stackexchange-agent "0.1.9"
+(defproject event-data-stackexchange-agent "0.1.10"
   :description "Crossref Event Data stackexchange.com Agent"
   :url "http://eventdata.crossref.org"
   :license {:name "The MIT License (MIT)"
