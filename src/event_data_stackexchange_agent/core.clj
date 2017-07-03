@@ -10,7 +10,6 @@
             [throttler.core :refer [throttle-fn]]
             [clj-http.client :as client]
             [config.core :refer [env]]
-            [clojure.core.async :refer [>!!]]
             [robert.bruce :refer [try-try-again]]
             [clj-time.format :as clj-time-format])
   (:import [java.util UUID]
@@ -41,7 +40,7 @@
 (defn fetch-sites-page
   "Fetch an API result, return a page of Sites."
   [page-number]
-  (status/add! "stackexchange-agent" "stackexchange" "fetch-sites" 1)
+  (status/send! "stackexchange-agent" "stackexchange" "fetch-sites" 1)
   (log/info "Fetch list of sites")
   (let [url (str api-host "/2.2/sites" )
         query-params {:page page-number
@@ -137,7 +136,7 @@
 (defn fetch-page
   "Fetch the API result, return a page of Actions."
   [site-info domain from-date page-number]
-  (status/add! "stackexchange-agent" "stackexchange" "fetch-page" 1)
+  (status/send! "stackexchange-agent" "stackexchange" "fetch-page" 1)
   (log/info "Fetch page for site" site-info "domain" domain)
   (let [url (str api-host "/2.2/search/excerpts" )
         query-params {:order "desc"
@@ -178,7 +177,7 @@
 
 ; https://api.stackexchange.com/docs/throttle
 ; Not entirely predictable. Go ultra low. 
-(def fetch-page-throttled-slow (throttle-fn fetch-page 5 :hour))
+(def fetch-page-throttled (throttle-fn fetch-page 5 :hour))
 
 (defn fetch-pages
   "Lazy sequence of pages for the domain."
@@ -192,11 +191,11 @@
     (let [result (fetch-page-throttled site-info domain from-date page-number)
           end (-> result :extra :has_more not)
           ; as float or nil
-          quota-used (when (and (-> result :extra :quota_max)
-                             (-> result :extra :quota_remaining)
-                             (> (-> result :extra :quota_max) 0))
-                           (/ (-> result :extra :quota_remaining)
-                              (-> result :extra :quota_max)))
+          quota-remaining-proportion (when (and (-> result :extra :quota_max)
+                                       (-> result :extra :quota_remaining)
+                                       (> (-> result :extra :quota_max) 0))
+                                     (float (/ (-> result :extra :quota_remaining)
+                                               (-> result :extra :quota_max))))
 
           backoff-seconds (-> result :extra :backoff)
 
@@ -204,10 +203,10 @@
           emergency-stop (or (-> result :exta :error)
                              (-> result :extra :quota_remaining (or 0) zero?))]
 
-      (log/info "Quota used:" quota-used "," (-> result :extra :quota_remaining) "/" (-> result :extra :quota_max) "quota remaining!")
+      (log/info "Quota remaining:" quota-remaining-proportion "," (-> result :extra :quota_remaining) "/" (-> result :extra :quota_max) "quota remaining!")
 
       ; In last 10% of quota, sleep more between requests.
-      (when (and quota-used (< quota-used 0.1))
+      (when (and quota-remaining-proportion (< quota-remaining-proportion 0.1))
         (log/info "Warning! " (-> result :extra :quota_remaining) "/" (-> result :extra :quota_max) "quota remaining!")
         (Thread/sleep 20000))
 
@@ -224,9 +223,9 @@
 
 (defn check-all-sites-from-artifact
   "Check all sites for unseen links."
-  [artifacts bundle-chan]
+  [artifacts callback]
   (log/info "Start crawl all Sites from artifact at" (str (clj-time/now)))
-  (status/add! "stackexchange-agent" "process" "scan-sites" 1)
+  (status/send! "stackexchange-agent" "process" "scan-sites" 1)
   (let [[site-list-url site-list] (get artifacts "stackexchange-sites")
         
         ; Sites artifact is {:site_url :api_site_parameter}
@@ -247,21 +246,21 @@
         
         ; Each page is big, so send them one at once.
         (doseq [page pages]
-          (let [package {:source-token source-token
-                     :source-id "stackexchange"
-                     :license license
-                     :agent {:version version :artifacts {:stackexchange-site-version site-list-url}}
-                     :extra {:cutoff-date (str cutoff-date) :queried-domain "doi.org"}
-                     :pages [page]}]
-        (log/info "Sending package...")
-        (>!! bundle-chan package))))))
+          (let [evidence-record {:source-token source-token
+                                 :source-id "stackexchange"
+                                 :license license
+                                 :agent {:version version :artifacts {:stackexchange-site-version site-list-url}}
+                                 :extra {:cutoff-date (str cutoff-date) :queried-domain "doi.org"}
+                                 :pages [page]}]
+        (log/info "Sending evidence-record...")
+        (callback evidence-record))))))
   (log/info "Finished scan."))
 
 (defn check-all-sites
   "Check all sites (except those in artifact, as we scan those on a more regular basis.)"
-  [artifacts bundle-chan]
+  [artifacts callback]
   (log/info "Start crawl all Sites on stackexchange at" (str (clj-time/now)))
-  (status/add! "stackexchange-agent" "process" "scan-sites" 1)
+  (status/send! "stackexchange-agent" "process" "scan-sites" 1)
   (let [[site-list-url site-list] (get artifacts "stackexchange-sites")
         
         ; Sites artifact is [{:site_url :api_site_parameter}]
@@ -286,19 +285,20 @@
         
         ; Each page is big, so send them one at once.
         (doseq [page pages]
-          (let [package {:source-token source-token
-                     :source-id "stackexchange"
-                     :license license
-                     :agent {:version version :artifacts {:stackexchange-site-version site-list-url}}
-                     :extra {:cutoff-date (str cutoff-date) :queried-domain "doi.org"}
-                     :pages [page]}]
-        (log/info "Sending package...")
-        (>!! bundle-chan package))))))
+          (let [evidence-record {:source-token source-token
+                                 :source-id "stackexchange"
+                                 :license license
+                                 :agent {:version version :artifacts {:stackexchange-site-version site-list-url}}
+                                 :extra {:cutoff-date (str cutoff-date) :queried-domain "doi.org"}
+                                 :pages [page]}]
+        (log/info "Sending evidence-record...")
+        (callback evidence-record))))))
   (log/info "Finished scan."))
 
 (def agent-definition
   {:agent-name "stackexchange-agent"
    :version version
+   :jwt (:stackexchange-jwt env)
    :schedule [
              {:name "check-sites-from-artifact"
               :seconds 432000 ; wait five days between scans from the small list.

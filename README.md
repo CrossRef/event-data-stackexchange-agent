@@ -22,7 +22,9 @@ To run as an agent, `lein run`. To update the rules in Gnip, which should be one
 
 ## Config
 
- - `PERCOLATOR_URL_BASE` e.g. https://percolator.eventdata.crossref.org
- - `JWT_TOKEN`
- - `STATUS_SERVICE_BASE`
- - `ARTIFACT_BASE`, e.g. https://artifact.eventdata.crossref.org
+Uses Event Data global configuration namespace.
+
+ - `STACKEXCHANGE_JWT`
+ - `GLOBAL_ARTIFACT_URL_BASE`, e.g. https://artifact.eventdata.crossref.org
+ - `GLOBAL_KAFKA_BOOTSTRAP_SERVERS`
+ - `GLOBAL_STATUS_TOPIC`
